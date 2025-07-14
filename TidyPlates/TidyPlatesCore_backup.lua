@@ -38,172 +38,15 @@ local InCombat, HasTarget = false, false
 TidyPlates.InCombat = InCombat
 
 -- smoothing
+TidyPlates.AnimationType = 3
 local CreateFrame = CreateFrame
 local GetFramerate = GetFramerate
 local min, max, abs = math.min, math.max, math.abs
 local select = select
+
 local smoothing = {}
 
--- Frame fade handling system
-TidyPlates.FadeFrames = {}
-local fadeFrame = CreateFrame("Frame")
-
-local function FrameIsFading(frame)
-    for _, value in pairs(TidyPlates.FadeFrames) do
-        if value.frame == frame then
-            return true
-        end
-    end
-    return false
-end
-
-local function FrameIsFading(frame)
-    return TidyPlates.FadeFrames[frame] ~= nil
-end
-
-local function FrameFade(frame, fadeInfo)
-    if not frame then return end
-    
-    -- Initialize fade info
-    fadeInfo = fadeInfo or {}
-    local timeToFade = fadeInfo.timeToFade or 0.3
-    local startAlpha = frame:GetAlpha()
-    local endAlpha = 0
-    
-    -- Store fade information
-    TidyPlates.FadeFrames[frame] = {
-        startTime = GetTime(),
-        startAlpha = startAlpha,
-        endAlpha = endAlpha,
-        duration = timeToFade
-    }
-    
-    if not fadeFrame:GetScript("OnUpdate") then
-        fadeFrame:SetScript("OnUpdate", function()
-            local complete = true
-            local currentTime = GetTime()
-            
-            for tex, fadeData in pairs(TidyPlates.FadeFrames) do
-                if fadeData then
-                    local elapsed = currentTime - fadeData.startTime
-                    if elapsed < fadeData.duration then
-                        local progress = elapsed / fadeData.duration
-                        local newAlpha = fadeData.startAlpha + ((fadeData.endAlpha - fadeData.startAlpha) * progress)
-                        tex:SetAlpha(newAlpha)
-                        complete = false
-                    else
-                        tex:SetAlpha(fadeData.endAlpha)
-                        TidyPlates.FadeFrames[tex] = nil
-                    end
-                end
-            end
-            
-            if complete then
-                fadeFrame:SetScript("OnUpdate", nil)
-            end
-        end)
-    end
-end
-
-local function StopFade(frame)
-    TidyPlates.FadeFrames[frame] = nil
-end
-
--- Cutaway implementation
-local function SetValueCutaway(self, value)
-    -- Get current value before we change it
-    local currentValue = self:GetValue()
-    
-    -- First set the actual value using the original function
-    self:OrigSetValue(value)
-    
-    -- Then handle the fade effect
-    if value < currentValue then
-        if not FrameIsFading(self.fadeTexture) then
-            self.fadeTexture:SetPoint("RIGHT", self, "LEFT", 
-                (currentValue / select(2, self:GetMinMaxValues())) * self:GetWidth(), 0)
-            self.fadeTexture.right = currentValue
-        end
-        self.fadeTexture:SetAlpha(0.5)
-        FrameFade(self.fadeTexture, {timeToFade = 0.3})
-    end
-    
-    if self.fadeTexture.right and value > self.fadeTexture.right then
-        StopFade(self.fadeTexture)
-        self.fadeTexture:SetAlpha(0)
-    end
-end
-
--- Smooth animation implementation
-local function SetValueSmooth(self, value)
-    local _, maxv = self:GetMinMaxValues()
-    if value == self:GetValue() or (self.prevMax and self.prevMax ~= maxv) then
-        smoothing[self] = nil
-        self:OrigSetValue(value)
-    else
-        smoothing[self] = value
-    end
-    self.prevMax = maxv
-end
-
--- Smooth animation frame
-local smoothingFrame = CreateFrame("Frame")
-smoothingFrame:SetScript("OnUpdate", function()
-    local limit = 30 / GetFramerate()
-    for bar, value in pairs(smoothing) do
-        local cur = bar:GetValue()
-        local new = cur + min((value - cur) / 3, max(value - cur, limit))
-        if new ~= new then
-            new = value
-        end
-        bar:OrigSetValue(new)
-        if cur == value or abs(new - value) < .005 then
-            bar:OrigSetValue(value)
-            smoothing[bar] = nil
-        end
-    end
-end)
-
--- Function to set up cutaway bar
-local function SetupCutawayBar(bar)
-    -- Only setup if not already setup
-    if bar.cutawaySetup then return end
-    
-    -- Store original SetValue if not already stored
-    if not bar.OrigSetValue then
-        bar.OrigSetValue = bar.SetValue
-    end
-    
-    -- Create fade texture if it doesn't exist
-    if not bar.fadeTexture then
-        bar.fadeTexture = bar:CreateTexture(nil, "ARTWORK")
-        bar.fadeTexture:SetTexture(bar:GetStatusBarTexture():GetTexture())
-        bar.fadeTexture:SetVertexColor(bar:GetStatusBarColor())
-        bar.fadeTexture:SetAlpha(0)
-        bar.fadeTexture:SetPoint("TOP")
-        bar.fadeTexture:SetPoint("BOTTOM")
-        bar.fadeTexture:SetPoint("LEFT", bar:GetStatusBarTexture(), "RIGHT")
-    end
-    
-    -- Replace the SetValue method
-    bar.SetValue = SetValueCutaway
-    
-    -- Store original SetStatusBarColor if not already stored
-    if not bar.OrigSetStatusBarColor then
-        bar.OrigSetStatusBarColor = bar.SetStatusBarColor
-    end
-    
-    -- Replace the SetStatusBarColor method
-    bar.SetStatusBarColor = function(self, ...)
-        self:OrigSetStatusBarColor(...)
-        if self.fadeTexture then
-            self.fadeTexture:SetVertexColor(...)
-        end
-    end
-    
-    bar.cutawaySetup = true
-    bar.smoothSetup = false
-end
+local animationFrame = CreateFrame("Frame")
 
 ----------------------------
 -- Internal Functions
@@ -391,44 +234,98 @@ end
 do
 	local color = {}
 	local threatborder, alpha, forcealpha, scale
-		-- UpdateIndicator_HealthBar: Updates the value on the health bar
-		function UpdateIndicator_HealthBar()
-	    local bar = bars.healthbar
+	-- UpdateIndicator_HealthBar: Updates the value on the health bar
+	function UpdateIndicator_HealthBar()
+	    -- Get the current animation type
+	    local animationType = TidyPlates.AnimationType or 1
 	    
-	    -- Store original SetValue if not already stored
-	    if not bar.OrigSetValue then
-	        bar.OrigSetValue = bar.SetValue
+	    -- Store original SetValue method if not already stored
+	    if not bars.healthbar.origSetValue then
+	        bars.healthbar.origSetValue = bars.healthbar.SetValue
 	    end
 	    
-	    -- Reset to original state if switching from an animation type
-	    if bar.smoothSetup or bar.cutawaySetup then
-	        bar.SetValue = bar.OrigSetValue
-	        bar.smoothSetup = false
-	        bar.cutawaySetup = false
+	    -- Setup smooth animation system if not already setup
+	    if animationType == 2 and not bars.healthbar.smoothSetup then
+	        -- Setup the OnUpdate handler for smooth animations
+	        animationFrame:SetScript("OnUpdate", function()
+	            local limit = 30 / GetFramerate()
+	            for bar, value in pairs(smoothing) do
+	                local cur = bar:GetValue()
+	                local new = cur + min((value - cur) / 3, max(value - cur, limit))
+	                if new ~= new then -- NaN check
+	                    new = value
+	                end
+	                bar:origSetValue(new)
+	                if cur == value or abs(new - value) < .005 then
+	                    bar:origSetValue(value)
+	                    smoothing[bar] = nil
+	                end
+	            end
+	        end)
 	        
-	        if bar.fadeTexture then
-	            bar.fadeTexture:SetAlpha(0)
-	            StopFade(bar.fadeTexture)
+	        -- Add smooth SetValue method
+	        function bars.healthbar:SetValue(value)
+	            local _, maxv = self:GetMinMaxValues()
+	            if value == self:GetValue() or (self.prevMax and self.prevMax ~= maxv) then
+	                smoothing[self] = nil
+	                self:origSetValue(value)
+	            else
+	                smoothing[self] = value
+	            end
+	            self.prevMax = maxv
 	        end
+	        
+	        bars.healthbar.smoothSetup = true
 	    end
 	    
-	    -- Apply the appropriate animation type
-	    if TidyPlates.AnimationType == 2 then
-	        -- Smooth animation
-	        if not bar.smoothSetup then
-	            bar.SetValue = SetValueSmooth
-	            bar.smoothSetup = true
+	    -- Setup cutaway animation system if not already setup
+	    if animationType == 3 and not bars.healthbar.cutawaySetup then
+	        -- Create the cutaway texture if it doesn't exist
+	        if not bars.healthbar.KuiFader then
+	            bars.healthbar.KuiFader = bars.healthbar:CreateTexture(nil, "ARTWORK")
+	            bars.healthbar.KuiFader:SetTexture(bars.healthbar:GetStatusBarTexture():GetTexture())
+	            bars.healthbar.KuiFader:SetVertexColor(bars.healthbar:GetStatusBarColor())
+	            bars.healthbar.KuiFader:SetAlpha(0)
+	            bars.healthbar.KuiFader:SetPoint("TOP")
+	            bars.healthbar.KuiFader:SetPoint("BOTTOM")
+	            bars.healthbar.KuiFader:SetPoint("LEFT", bars.healthbar:GetStatusBarTexture(), "RIGHT")
 	        end
-	    elseif TidyPlates.AnimationType == 3 then
-	        -- Cutaway animation
-	        if not bar.cutawaySetup then
-	            SetupCutawayBar(bar)
+	        
+	        -- Add cutaway SetValue method
+	        function bars.healthbar:SetValue(value)
+	            if value < self:GetValue() then
+	                if not self.KuiFader.fading then
+	                    self.KuiFader:SetPoint("RIGHT", self, "LEFT", 
+	                        (self:GetValue() / select(2, self:GetMinMaxValues())) * self:GetWidth(), 0)
+	                    self.KuiFader.right = self:GetValue()
+	                end
+	                self.KuiFader.fading = true
+	                self.KuiFader:SetAlpha(0.5)
+	                C_Timer.After(0.3, function()
+	                    self.KuiFader:SetAlpha(0)
+	                    self.KuiFader.fading = false
+	                end)
+	            end
+	            if self.KuiFader.right and value > self.KuiFader.right then
+	                self.KuiFader:SetAlpha(0)
+	                self.KuiFader.fading = false
+	            end
+	            self:origSetValue(value)
 	        end
+	        
+	        bars.healthbar.cutawaySetup = true
+	    end
+
+	    -- Reset to original behavior if switching from an animated type
+	    if animationType == 1 and (bars.healthbar.smoothSetup or bars.healthbar.cutawaySetup) then
+	        bars.healthbar.SetValue = bars.healthbar.origSetValue
+	        bars.healthbar.smoothSetup = false
+	        bars.healthbar.cutawaySetup = false
 	    end
 	    
-	    -- Core functionality
-	    bar:SetMinMaxValues(bars.health:GetMinMaxValues())
-	    bar:SetValue(bars.health:GetValue())
+	    -- Set the values
+	    bars.healthbar:SetMinMaxValues(bars.health:GetMinMaxValues())
+	    bars.healthbar:SetValue(bars.health:GetValue())
 	end
 	-- UpdateIndicator_Name:
 	function UpdateIndicator_Name()

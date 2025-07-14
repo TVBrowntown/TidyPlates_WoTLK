@@ -36,6 +36,16 @@ local function ShowMinimapButton(enable)
 	end
 end
 
+local function ShowWelcome()
+    if not TidyPlatesOptions.WelcomeShown then
+        SetCVar("ShowClassColorInNameplate", 1)
+        SetCVar("nameplateShowEnemies", 1)
+        SetCVar("nameplateShowFriends", 0)
+        SetCVar("threatWarning", 3)
+        TidyPlatesOptions.WelcomeShown = true
+    end
+end
+
 -------------------------------------------------------------------------------------
 --  Default Options
 -------------------------------------------------------------------------------------
@@ -47,7 +57,8 @@ TidyPlatesOptions = {
 	EnemyAutomation = L["No Automation"],
 	EnableCastWatcher = false,
 	WelcomeShown = false,
-	EnableMinimapButton = false
+	EnableMinimapButton = false,
+	AnimationType = 1
 }
 
 local TidyPlatesOptionsDefaults = copytable(TidyPlatesOptions)
@@ -133,6 +144,12 @@ local AutomationDropdownItems = {
 	{text = L["No Automation"], notCheckable = 1},
 	{text = L["Show during Combat, Hide when Combat ends"], notCheckable = 1},
 	{text = L["Hide when Combat starts, Show when Combat ends"], notCheckable = 1}
+}
+
+local AnimationDropdownItems = {
+    {text = L["No Animation"], notCheckable = 1},
+    {text = L["Smooth Animation"], notCheckable = 1},
+    {text = L["Cutaway Animation"], notCheckable = 1}
 }
 
 local panel = PanelHelpers:CreatePanelFrame("TidyPlatesInterfaceOptions", "Tidy Plates", titleString)
@@ -288,6 +305,33 @@ local function ActivateInterfacePanel()
 	panel.EnableMinimapButton:SetPoint("TOPLEFT", panel.EnableCastWatcher, "TOPLEFT", 0, -35)
 	panel.EnableMinimapButton:SetScript("OnClick", function(self) ShowMinimapButton(self:GetChecked()) end)
 
+	-- Animation Type Dropdown
+    panel.AnimationType = PanelHelpers:CreateDropdownFrame(
+        "TidyPlatesAnimationType", 
+        panel, 
+        AnimationDropdownItems, 
+        L["No Animation"], 
+        nil, 
+        true
+    )
+    panel.AnimationType:SetPoint("TOPLEFT", panel.EnableMinimapButton, "TOPLEFT", 0, -70)
+    
+    -- Animation Type Label
+    panel.AnimationTypeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    panel.AnimationTypeLabel:SetPoint("BOTTOMLEFT", panel.AnimationType, "TOPLEFT", 20, 5)
+    panel.AnimationTypeLabel:SetWidth(170)
+    panel.AnimationTypeLabel:SetJustifyH("LEFT")
+    panel.AnimationTypeLabel:SetText(L["Health Bar Animation:"])
+    
+    -- Animation Type Description
+    panel.AnimationDescription = panel:CreateFontString(nil, "ARTWORK")
+    panel.AnimationDescription:SetFont("Fonts\\FRIZQT__.TTF", 10, nil)
+    panel.AnimationDescription:SetPoint("TOPLEFT", panel.AnimationType, "BOTTOMLEFT", 20, -8)
+    panel.AnimationDescription:SetWidth(340)
+    panel.AnimationDescription:SetJustifyH("LEFT")
+    panel.AnimationDescription:SetText(L["Choose how health bar changes are animated."])
+    panel.AnimationDescription:SetTextColor(1, 1, 1, 1)
+
 	-- Reset
 	ResetButton = CreateFrame("Button", "TidyPlatesOptions_ResetButton", panel, "UIPanelButtonTemplate2")
 	ResetButton:SetPoint("BOTTOMRIGHT", -16, 8)
@@ -300,23 +344,28 @@ local function ActivateInterfacePanel()
 	panel.SecondarySpecTheme.OnValueChanged = ApplyPanelSettings
 
 	local function RefreshPanel()
-		panel.PrimarySpecTheme:SetValue(TidyPlatesOptions.primary)
-		panel.SecondarySpecTheme:SetValue(TidyPlatesOptions.secondary)
-		panel.EnableCastWatcher:SetChecked(TidyPlatesOptions.EnableCastWatcher)
-		panel.EnableMinimapButton:SetChecked(TidyPlatesOptions.EnableMinimapButton)
-		panel.AutoShowFriendly:SetValue(TidyPlatesOptions.FriendlyAutomation)
-		panel.AutoShowEnemy:SetValue(TidyPlatesOptions.EnemyAutomation)
+	    panel.PrimarySpecTheme:SetValue(TidyPlatesOptions.primary)
+	    panel.SecondarySpecTheme:SetValue(TidyPlatesOptions.secondary)
+	    panel.EnableCastWatcher:SetChecked(TidyPlatesOptions.EnableCastWatcher)
+	    panel.EnableMinimapButton:SetChecked(TidyPlatesOptions.EnableMinimapButton)
+	    panel.AutoShowFriendly:SetValue(TidyPlatesOptions.FriendlyAutomation)
+	    panel.AutoShowEnemy:SetValue(TidyPlatesOptions.EnemyAutomation)
+	    panel.AnimationType:SetValue(
+	        TidyPlatesOptions.AnimationType == 1 and L["No Animation"] or
+	        TidyPlatesOptions.AnimationType == 2 and L["Smooth Animation"] or
+	        L["Cutaway Animation"]
+	    )
 
-		if ThemeHasPanelLink(TidyPlatesOptions["primary"]) then
-			panel.PrimaryEditButton:Show()
-		else
-			panel.PrimaryEditButton:Hide()
-		end
-		if ThemeHasPanelLink(TidyPlatesOptions["secondary"]) then
-			panel.SecondaryEditButton:Show()
-		else
-			panel.SecondaryEditButton:Hide()
-		end
+	    if ThemeHasPanelLink(TidyPlatesOptions["primary"]) then
+	        panel.PrimaryEditButton:Show()
+	    else
+	        panel.PrimaryEditButton:Hide()
+	    end
+	    if ThemeHasPanelLink(TidyPlatesOptions["secondary"]) then
+	        panel.SecondaryEditButton:Show()
+	    else
+	        panel.SecondaryEditButton:Hide()
+	    end
 	end
 
 	panel.refresh = RefreshPanel
@@ -377,46 +426,48 @@ local function ApplyAutomationSettings()
 end
 
 ApplyPanelSettings = function()
-	TidyPlatesOptions.primary = panel.PrimarySpecTheme:GetValue()
-	TidyPlatesOptions.secondary = panel.SecondarySpecTheme:GetValue()
-	TidyPlatesOptions.FriendlyAutomation = panel.AutoShowFriendly:GetValue()
-	TidyPlatesOptions.EnemyAutomation = panel.AutoShowEnemy:GetValue()
-	TidyPlatesOptions.EnableCastWatcher = panel.EnableCastWatcher:GetChecked()
-	TidyPlatesOptions.EnableMinimapButton = panel.EnableMinimapButton:GetChecked()
+    TidyPlatesOptions.primary = panel.PrimarySpecTheme:GetValue()
+    TidyPlatesOptions.secondary = panel.SecondarySpecTheme:GetValue()
+    TidyPlatesOptions.FriendlyAutomation = panel.AutoShowFriendly:GetValue()
+    TidyPlatesOptions.EnemyAutomation = panel.AutoShowEnemy:GetValue()
+    TidyPlatesOptions.EnableCastWatcher = panel.EnableCastWatcher:GetChecked()
+    TidyPlatesOptions.EnableMinimapButton = panel.EnableMinimapButton:GetChecked()
+    
+    -- Save Animation Type
+    local animValue = panel.AnimationType:GetValue()
 
-	-- Clear Widgets
-	if TidyPlatesWidgets then
-		TidyPlatesWidgets:ResetWidgets()
-	end
+    TidyPlatesOptions.AnimationType = 
+        animValue == L["No Animation"] and 1 or
+        animValue == L["Smooth Animation"] and 2 or
+        animValue == L["Cutaway Animation"] and 3 or 1
 
-	if currentThemeName ~= TidyPlatesOptions[activespec] then
-		LoadTheme(TidyPlatesOptions[activespec])
-	end
+    -- Clear Widgets
+    if TidyPlatesWidgets then
+        TidyPlatesWidgets:ResetWidgets()
+    end
 
-	-- Update Appearance
-	ApplyAutomationSettings()
+    if currentThemeName ~= TidyPlatesOptions[activespec] then
+        LoadTheme(TidyPlatesOptions[activespec])
+    end
 
-	-- Editing Link
-	if ThemeHasPanelLink(TidyPlatesOptions["primary"]) then
-		panel.PrimaryEditButton:Show()
-	else
-		panel.PrimaryEditButton:Hide()
-	end
-	if ThemeHasPanelLink(TidyPlatesOptions["secondary"]) then
-		panel.SecondaryEditButton:Show()
-	else
-		panel.SecondaryEditButton:Hide()
-	end
-end
+    -- Update Appearance
+    ApplyAutomationSettings()
 
-local function ShowWelcome()
-	if not TidyPlatesOptions.WelcomeShown then
-		SetCVar("ShowClassColorInNameplate", 1)
-		SetCVar("nameplateShowEnemies", 1)
-		SetCVar("nameplateShowFriends", 0)
-		SetCVar("threatWarning", 3)
-		TidyPlatesOptions.WelcomeShown = true
-	end
+    -- Update Animations
+    TidyPlates.AnimationType = TidyPlatesOptions.AnimationType
+    TidyPlates:ForceUpdate()
+
+    -- Editing Link
+    if ThemeHasPanelLink(TidyPlatesOptions["primary"]) then
+        panel.PrimaryEditButton:Show()
+    else
+        panel.PrimaryEditButton:Hide()
+    end
+    if ThemeHasPanelLink(TidyPlatesOptions["secondary"]) then
+        panel.SecondaryEditButton:Show()
+    else
+        panel.SecondaryEditButton:Hide()
+    end
 end
 
 -------------------------------------------------------------------------------------
@@ -493,6 +544,7 @@ function panelevents:PLAYER_LOGIN()
 	ShowWelcome()
 	LoadTheme("None")
 	ApplyAutomationSettings()
+	TidyPlates.AnimationType = TidyPlatesOptions.AnimationType
 end
 
 panel:SetScript("OnEvent", function(self, event, ...) panelevents[event](self, ...) end)

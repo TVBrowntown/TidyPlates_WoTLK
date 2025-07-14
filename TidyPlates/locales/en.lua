@@ -260,3 +260,9 @@ L["Totem of Wrath I"] = true
 L["Totem of Wrath II"] = true
 L["Totem of Wrath III"] = true
 L["Totem of Wrath IV"] = true
+
+L["No Animation"] = "No Animation"
+L["Smooth Animation"] = "Smooth Animation"
+L["Cutaway Animation"] = "Cutaway Animation"
+L["Health Bar Animation:"] = "Health Bar Animation:"
+L["Choose how health bar changes are animated."] = "Choose how health bar changes are animated."

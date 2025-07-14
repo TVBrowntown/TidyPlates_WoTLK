@@ -1,0 +1,6 @@
+## Interface: 30300
+## Title: Tidy Plates: Retail Theme
+## Notes: It's #4!
+## Author: Bset
+## Dependencies: TidyPlates
+Retail.lua
